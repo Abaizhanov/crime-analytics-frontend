@@ -40,3 +40,20 @@ a {
     color-scheme: dark;
   }
 }
+.crime-cluster-wrapper{
+  background: transparent;
+}
+
+.crime-cluster{
+  background: #2563eb;
+  color: white;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:600;
+  font-size:14px;
+  box-shadow:0 4px 10px rgba(0,0,0,0.3);
+}
