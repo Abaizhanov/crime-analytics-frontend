@@ -6,14 +6,49 @@ import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet'
 import { useState, useEffect } from 'react'
 import L from 'leaflet'
+import proj4 from 'proj4'
+import 'proj4leaflet'
+
+
+const YANDEX_API_KEY = process.env.NEXT_PUBLIC_YANDEX_API_KEY
 
 const SEVERITY_OPTIONS = [
-  { value: 'heavy',  label: 'Тяжкие',          color: '#dc2626' },
-  { value: 'medium', label: 'Средние',           color: '#ea580c' },
-  { value: 'light',  label: 'Небольшие',         color: '#16a34a' },
+  { value: 'heavy',  label: 'Тяжкие',    color: '#dc2626' },
+  { value: 'medium', label: 'Средние',   color: '#ea580c' },
+  { value: 'light',  label: 'Небольшие', color: '#16a34a' },
 ]
 
-// Теперь принимает hard_code, а не crime_name
+const crs = new L.Proj.CRS(
+  'EPSG:3395',
+  '+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs',
+  {
+    origin: [-20037508.342789, 20037508.342789],
+    resolutions: [
+      156543.03392804097,
+      78271.51696402048,
+      39135.75848201024,
+      19567.87924100512,
+      9783.93962050256,
+      4891.96981025128,
+      2445.98490512564,
+      1222.99245256282,
+      611.49622628141,
+      305.748113140705,
+      152.8740565703525,
+      76.43702828517625,
+      38.21851414258813,
+      19.109257071294063,
+      9.554628535647032,
+      4.777314267823516,
+      2.388657133911758,
+      1.194328566955879,
+      0.597164283477939,
+      0.298582141738970,
+      0.149291070869485
+    ]
+  }
+)
+
 const getSeverityColor = (hardCode) => {
   if (!hardCode) return '#6b7280'
   const h = hardCode.toLowerCase()
@@ -44,7 +79,6 @@ const createCrimeDivIcon = (hardCode) => {
   })
 }
 
-// ── Легенда (только при детальном зуме) ──────────────────────────────────────
 function Legend() {
   return (
     <div style={{
@@ -60,7 +94,7 @@ function Legend() {
         ['#6b7280', 'Неизвестно'],
       ].map(([color, label]) => (
         <div key={color} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#111' }}>
-          <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)', flexShrink: 0 }} />
+          <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, border: '2px solid white', flexShrink: 0 }} />
           {label}
         </div>
       ))}
@@ -68,7 +102,6 @@ function Legend() {
   )
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
 function Sidebar({ filters, setFilters, options, isOpen, setIsOpen }) {
   const toggle = (key, value) => {
     setFilters(prev => {
@@ -81,116 +114,67 @@ function Sidebar({ filters, setFilters, options, isOpen, setIsOpen }) {
 
   return (
     <>
-      {/* Кнопка открытия/закрытия */}
-      <button
-        onClick={() => setIsOpen(o => !o)}
-        style={{
-          position: 'absolute',
-          top: 16,
-          left: isOpen ? 316 : 16,
-          zIndex: 1002,
-          background: 'white',
-          border: 'none',
-          borderRadius: 8,
-          padding: '8px 14px',
-          cursor: 'pointer',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          fontWeight: 600,
-          fontSize: 14,
-          transition: 'left 0.3s ease',
-        }}
-      >
+      <button onClick={() => setIsOpen(o => !o)} style={{
+        position: 'absolute', top: 16, left: isOpen ? 316 : 16, zIndex: 1002,
+        background: 'white', border: 'none', borderRadius: 8, padding: '8px 14px',
+        cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+        display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 14,
+        transition: 'left 0.3s ease',
+      }}>
         ⚙️ Фильтры
         {activeCount > 0 && (
           <span style={{
             background: '#dc2626', color: 'white', borderRadius: '50%',
-            width: 20, height: 20, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 11,
-          }}>
-            {activeCount}
-          </span>
+            width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+          }}>{activeCount}</span>
         )}
       </button>
 
-      {/* Панель */}
       <div style={{
-        position: 'absolute',
-        top: 0,
-        left: isOpen ? 0 : -300,
-        width: 300,
-        height: '100%',
-        zIndex: 1001,
-        background: 'white',
-        color: '#111',
-        boxShadow: '2px 0 12px rgba(0,0,0,0.15)',
-        transition: 'left 0.3s ease',
-        overflowY: 'auto',
-        padding: 20,
-        boxSizing: 'border-box',
+        position: 'absolute', top: 0, left: isOpen ? 0 : -300, width: 300, height: '100%',
+        zIndex: 1001, background: 'white', color: '#111',
+        boxShadow: '2px 0 12px rgba(0,0,0,0.15)', transition: 'left 0.3s ease',
+        overflowY: 'auto', padding: 20, boxSizing: 'border-box',
       }}>
-        {/* Заголовок */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Фильтры</h2>
           {activeCount > 0 && (
             <button onClick={resetAll} style={{
-              background: 'none', border: '1px solid #dc2626',
-              color: '#dc2626', borderRadius: 6, padding: '4px 10px',
-              cursor: 'pointer', fontSize: 12,
-            }}>
-              Сбросить всё
-            </button>
+              background: 'none', border: '1px solid #dc2626', color: '#dc2626',
+              borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12,
+            }}>Сбросить всё</button>
           )}
         </div>
 
-        {/* Год */}
         <Section title="📅 Год">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {options.years.map(year => (
-              <Chip
-                key={year}
-                label={year}
-                active={filters.years.includes(String(year))}
-                onClick={() => toggle('years', String(year))}
-              />
+              <Chip key={year} label={year} active={filters.years.includes(String(year))} onClick={() => toggle('years', String(year))} />
             ))}
           </div>
         </Section>
 
-        {/* Тяжесть */}
         <Section title="⚖️ Тяжесть">
           {SEVERITY_OPTIONS.map(s => (
-            <div
-              key={s.value}
-              onClick={() => toggle('severity', s.value)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
-                background: filters.severity.includes(s.value) ? '#eff6ff' : 'transparent',
-                border: `1px solid ${filters.severity.includes(s.value) ? '#2563eb' : 'transparent'}`,
-              }}
-            >
+            <div key={s.value} onClick={() => toggle('severity', s.value)} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+              borderRadius: 8, cursor: 'pointer', marginBottom: 4,
+              background: filters.severity.includes(s.value) ? '#eff6ff' : 'transparent',
+              border: `1px solid ${filters.severity.includes(s.value) ? '#2563eb' : 'transparent'}`,
+            }}>
               <div style={{ width: 12, height: 12, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
               <span style={{ fontSize: 13 }}>{s.label}</span>
             </div>
           ))}
         </Section>
 
-        {/* Район */}
         <Section title="📍 Район">
           {options.districts.length === 0 ? (
             <div style={{ fontSize: 12, color: '#9ca3af' }}>Загрузка...</div>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {options.districts.map(d => (
-                <Chip
-                  key={d}
-                  label={d}
-                  active={filters.districts.includes(d)}
-                  onClick={() => toggle('districts', d)}
-                />
+                <Chip key={d} label={d} active={filters.districts.includes(d)} onClick={() => toggle('districts', d)} />
               ))}
             </div>
           )}
@@ -219,20 +203,13 @@ function Chip({ label, active, onClick }) {
       color: active ? 'white' : '#111111',
       border: `1px solid ${active ? '#2563eb' : '#e5e7eb'}`,
       userSelect: 'none',
-    }}>
-      {label}
-    </div>
+    }}>{label}</div>
   )
 }
 
-// ── Map helpers ───────────────────────────────────────────────────────────────
 function buildUrl(bounds, zoom, filters) {
   const { _northEast: ne, _southWest: sw } = bounds
-  const params = new URLSearchParams({
-    north: ne.lat, south: sw.lat,
-    east: ne.lng,  west: sw.lng,
-    zoom,
-  })
+  const params = new URLSearchParams({ north: ne.lat, south: sw.lat, east: ne.lng, west: sw.lng, zoom })
   if (filters.years.length)     params.set('years',     filters.years.join(','))
   if (filters.severity.length)  params.set('severity',  filters.severity.join(','))
   if (filters.districts.length) params.set('districts', filters.districts.join(','))
@@ -240,56 +217,56 @@ function buildUrl(bounds, zoom, filters) {
 }
 
 function MapEvents({ setCrimes, setZoom, filters }) {
-  const map = useMapEvents({
-    moveend: fetchData,
-    zoomend: fetchData,
-  })
-
+  const map = useMapEvents({ moveend: fetchData, zoomend: fetchData })
   function fetchData() {
     const bounds = map.getBounds()
     const zoom = map.getZoom()
     setZoom(zoom)
-    fetch(buildUrl(bounds, zoom, filters))
-      .then(r => r.json())
-      .then(data => setCrimes(data))
+    fetch(buildUrl(bounds, zoom, filters)).then(r => r.json()).then(data => setCrimes(data))
   }
-
   return null
 }
 
-// Перезапрашивает данные при смене фильтров без движения карты
+// Заменяет whenReady — загружает данные при монтировании карты
+function MapInit({ setCrimes, setZoom, filters }) {
+  const map = useMap()
+  useEffect(() => {
+    const bounds = map.getBounds()
+    const zoom = map.getZoom()
+    setZoom(zoom)
+    fetch(buildUrl(bounds, zoom, filters)).then(r => r.json()).then(data => setCrimes(data))
+  }, [])
+  return null
+}
+
 function FilterWatcher({ filters, setCrimes, setZoom }) {
   const map = useMap()
   useEffect(() => {
     const bounds = map.getBounds()
     const zoom = map.getZoom()
     setZoom(zoom)
-    fetch(buildUrl(bounds, zoom, filters))
-      .then(r => r.json())
-      .then(data => setCrimes(data))
+    fetch(buildUrl(bounds, zoom, filters)).then(r => r.json()).then(data => setCrimes(data))
   }, [filters])
   return null
 }
 
-function ClusterMarker({ point, index }) {
+function ClusterMarker({ point }) {
   const map = useMap()
+  const lat = Number(point.lat)
+  const lng = Number(point.lng)
+  if (!isFinite(lat) || !isFinite(lng)) return null
   const handleClick = () => {
     const z = map.getZoom()
     const step = z < 12 ? 4 : z < 14 ? 3 : z < 16 ? 2 : 1
-    map.flyTo([Number(point.lat), Number(point.lng)], Math.min(z + step, 17), { duration: 0.6 })
+    map.flyTo([lat, lng], Math.min(z + step, 17), { duration: 0.6 })
   }
   return (
-    <Marker
-      position={[Number(point.lat), Number(point.lng)]}
-      icon={createClusterDivIcon(point.count)}
-      eventHandlers={{ click: handleClick }}
-    >
+    <Marker position={[lat, lng]} icon={createClusterDivIcon(point.count)} eventHandlers={{ click: handleClick }}>
       <Popup>{point.count} преступлений</Popup>
     </Marker>
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
 export default function CrimeMap() {
   const [crimes, setCrimes]           = useState([])
   const [zoom, setZoom]               = useState(12)
@@ -307,39 +284,32 @@ export default function CrimeMap() {
 
   return (
     <div style={{ position: 'relative', height: '100vh', overflow: 'hidden' }}>
-
-      <Sidebar
-        filters={filters}
-        setFilters={setFilters}
-        options={options}
-        isOpen={sidebarOpen}
-        setIsOpen={setSidebarOpen}
-      />
+      <Sidebar filters={filters} setFilters={setFilters} options={options} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
       <MapContainer
         center={[43.238949, 76.889709]}
+        maxZoom={20}
         zoom={12}
+        crs={crs}
         style={{ height: '100vh', width: '100%' }}
-        whenReady={(map) => {
-          const bounds = map.target.getBounds()
-          const z = map.target.getZoom()
-          fetch(buildUrl(bounds, z, filters))
-            .then(r => r.json())
-            .then(data => setCrimes(data))
-        }}
       >
-        <TileLayer attribution="© OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer
+          attribution='© <a href="https://yandex.ru/maps" target="_blank">Яндекс Карты</a>'
+          url={`https://tiles.api-maps.yandex.ru/v1/tiles/?x={x}&y={y}&z={z}&lang=ru_RU&l=map&apikey=${YANDEX_API_KEY}`}
+          maxZoom={20}
+          tileSize={256}
+        />
 
+        <MapInit setCrimes={setCrimes} setZoom={setZoom} filters={filters} />
         <MapEvents setCrimes={setCrimes} setZoom={setZoom} filters={filters} />
         <FilterWatcher filters={filters} setCrimes={setCrimes} setZoom={setZoom} />
 
-        {crimes.map((point, index) =>
-          isDetailed ? (
-            <Marker
-              key={`crime-${index}`}
-              position={[Number(point.lat), Number(point.lng)]}
-              icon={createCrimeDivIcon(point.hard_code)}  // ← исправлено: hard_code вместо crime_name
-            >
+        {crimes.map((point, index) => {
+          const lat = Number(point.lat)
+          const lng = Number(point.lng)
+          if (!isFinite(lat) || !isFinite(lng)) return null
+          return isDetailed ? (
+            <Marker key={`crime-${index}`} position={[lat, lng]} icon={createCrimeDivIcon(point.hard_code)}>
               <Popup>
                 <strong>{point.crime_name || 'Неизвестно'}</strong><br />
                 Тяжесть: {point.hard_code ? point.hard_code.replace(/\s*-\s*\d+$/, '') : '—'}<br />
@@ -347,9 +317,9 @@ export default function CrimeMap() {
               </Popup>
             </Marker>
           ) : (
-            <ClusterMarker key={index} point={point} index={index} />
+            <ClusterMarker key={index} point={point} />
           )
-        )}
+        })}
 
         {isDetailed && <Legend />}
       </MapContainer>

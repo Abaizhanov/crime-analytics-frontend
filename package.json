@@ -12,12 +12,16 @@
     "leaflet": "^1.9.4",
     "leaflet-defaulticon-compatibility": "^0.1.2",
     "next": "16.1.6",
+    "proj4": "^2.20.4",
+    "proj4leaflet": "^1.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
     "react-leaflet-cluster": "^4.0.0"
   },
   "devDependencies": {
+    "@types/proj4": "^2.5.6",
+    "@types/proj4leaflet": "^1.0.12",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6"
