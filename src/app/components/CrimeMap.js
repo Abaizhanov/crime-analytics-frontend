@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react'
 import L from 'leaflet'
 import proj4 from 'proj4'
 import 'proj4leaflet'
+import { mapCache } from '@/hooks/useMapCache'
 
 
 const YANDEX_API_KEY = process.env.NEXT_PUBLIC_YANDEX_API_KEY
@@ -216,25 +217,41 @@ function buildUrl(bounds, zoom, filters) {
   return `http://127.0.0.1:8000/api/map?${params}`
 }
 
+// Общая функция загрузки — оставь как есть, она уже не хук
+function loadCrimes(map, zoom, filters, setCrimes) {
+  const bounds = map.getBounds()
+  const cached = mapCache.get(bounds, zoom, filters)
+  if (cached) {
+    setCrimes(cached)
+    return
+  }
+  fetch(buildUrl(bounds, zoom, filters))
+    .then(r => r.json())
+    .then(data => {
+      mapCache.set(bounds, zoom, filters, data)
+      setCrimes(data)
+    })
+}
+
 function MapEvents({ setCrimes, setZoom, filters }) {
-  const map = useMapEvents({ moveend: fetchData, zoomend: fetchData })
+  const map = useMapEvents({
+    moveend: fetchData,
+    zoomend: fetchData,
+  })
   function fetchData() {
-    const bounds = map.getBounds()
     const zoom = map.getZoom()
     setZoom(zoom)
-    fetch(buildUrl(bounds, zoom, filters)).then(r => r.json()).then(data => setCrimes(data))
+    loadCrimes(map, zoom, filters, setCrimes)
   }
   return null
 }
 
-// Заменяет whenReady — загружает данные при монтировании карты
 function MapInit({ setCrimes, setZoom, filters }) {
   const map = useMap()
   useEffect(() => {
-    const bounds = map.getBounds()
     const zoom = map.getZoom()
     setZoom(zoom)
-    fetch(buildUrl(bounds, zoom, filters)).then(r => r.json()).then(data => setCrimes(data))
+    loadCrimes(map, zoom, filters, setCrimes)
   }, [])
   return null
 }
@@ -242,10 +259,9 @@ function MapInit({ setCrimes, setZoom, filters }) {
 function FilterWatcher({ filters, setCrimes, setZoom }) {
   const map = useMap()
   useEffect(() => {
-    const bounds = map.getBounds()
     const zoom = map.getZoom()
     setZoom(zoom)
-    fetch(buildUrl(bounds, zoom, filters)).then(r => r.json()).then(data => setCrimes(data))
+    loadCrimes(map, zoom, filters, setCrimes)
   }, [filters])
   return null
 }
