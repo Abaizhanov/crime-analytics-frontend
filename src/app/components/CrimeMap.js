@@ -3,13 +3,12 @@
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-defaulticon-compatibility'
 import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css'
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMapEvents, useMap } from 'react-leaflet'
 import { useState, useEffect } from 'react'
 import L from 'leaflet'
 import proj4 from 'proj4'
 import 'proj4leaflet'
 import { mapCache } from '@/hooks/useMapCache'
-
 
 const YANDEX_API_KEY = process.env.NEXT_PUBLIC_YANDEX_API_KEY
 
@@ -25,28 +24,14 @@ const crs = new L.Proj.CRS(
   {
     origin: [-20037508.342789, 20037508.342789],
     resolutions: [
-      156543.03392804097,
-      78271.51696402048,
-      39135.75848201024,
-      19567.87924100512,
-      9783.93962050256,
-      4891.96981025128,
-      2445.98490512564,
-      1222.99245256282,
-      611.49622628141,
-      305.748113140705,
-      152.8740565703525,
-      76.43702828517625,
-      38.21851414258813,
-      19.109257071294063,
-      9.554628535647032,
-      4.777314267823516,
-      2.388657133911758,
-      1.194328566955879,
-      0.597164283477939,
-      0.298582141738970,
-      0.149291070869485
-    ]
+      156543.03392804097, 78271.51696402048, 39135.75848201024,
+      19567.87924100512,  9783.93962050256,  4891.96981025128,
+      2445.98490512564,   1222.99245256282,  611.49622628141,
+      305.748113140705,   152.8740565703525, 76.43702828517625,
+      38.21851414258813,  19.109257071294063,9.554628535647032,
+      4.777314267823516,  2.388657133911758, 1.194328566955879,
+      0.597164283477939,  0.298582141738970, 0.149291070869485,
+    ],
   }
 )
 
@@ -80,25 +65,85 @@ const createCrimeDivIcon = (hardCode) => {
   })
 }
 
-function Legend() {
+const getDistrictStyle = (feature, selectedDistricts) => {
+  const nameRu = feature.properties?.nameRu || ''
+  const isSelected = selectedDistricts.some(d =>
+    nameRu.toLowerCase().includes(d.toLowerCase()) ||
+    d.toLowerCase().includes(nameRu.toLowerCase())
+  )
+  return {
+    color: isSelected ? '#dc2626' : '#9ca3af',
+    weight: isSelected ? 3 : 1.5,
+    opacity: isSelected ? 1 : 0.8,
+    fillColor: isSelected ? '#dc2626' : 'transparent',
+    fillOpacity: isSelected ? 0.08 : 0,
+    interactive: false,
+  }
+}
+
+function useCountUp(target, duration = 800) {
+  const [value, setValue] = useState(0)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (target === 0) { setValue(0); return }
+    const start = Date.now()
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - start
+      const progress = Math.min(elapsed / duration, 1)
+      // easeOut
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setValue(Math.round(eased * target))
+      if (progress >= 1) clearInterval(timer)
+    }, 16)
+    return () => clearInterval(timer)
+  }, [target])
+  return value
+}
+
+function StatCard({ label, color, count }) {
+  const animated = useCountUp(count)
   return (
     <div style={{
-      position: 'absolute', bottom: 70, left: 10, zIndex: 1000,
-      background: 'white', borderRadius: 8, padding: '10px 14px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.2)', fontSize: 12, lineHeight: '22px',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '8px 12px', borderRadius: 8, marginBottom: 6,
+      background: 'white', boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
     }}>
-      <div style={{ fontWeight: 'bold', marginBottom: 4, color: '#111' }}>Тяжесть преступления</div>
-      {[
-        ['#dc2626', 'Тяжкие'],
-        ['#ea580c', 'Средней тяжести'],
-        ['#16a34a', 'Небольшой тяжести'],
-        ['#6b7280', 'Неизвестно'],
-      ].map(([color, label]) => (
-        <div key={color} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#111' }}>
-          <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, border: '2px solid white', flexShrink: 0 }} />
-          {label}
-        </div>
-      ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: '#374151' }}>{label}</span>
+      </div>
+      <span style={{ fontSize: 18, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
+        {animated.toLocaleString('ru')}
+      </span>
+    </div>
+  )
+}
+
+function Legend({ filters }) {
+  const [stats, setStats] = useState({ heavy: 0, medium: 0, light: 0 })
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (filters.years.length)     params.set('years',     filters.years.join(','))
+    if (filters.districts.length) params.set('districts', filters.districts.join(','))
+    fetch(`http://127.0.0.1:8000/api/map/stats?${params}`)
+      .then(r => r.json())
+      .then(data => setStats(data))
+  }, [filters.years, filters.districts])
+
+  return (
+    <div style={{
+      position: 'absolute', bottom: 24, right: 16, zIndex: 1000,
+      width: 240, padding: '12px',
+      background: 'rgba(255,255,255,0.95)', borderRadius: 12,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Статистика преступлений
+      </div>
+      <StatCard label="Тяжкие"           color="#dc2626" count={stats.heavy}  />
+      <StatCard label="Средней тяжести"  color="#ea580c" count={stats.medium} />
+      <StatCard label="Небольшой тяжести" color="#16a34a" count={stats.light}  />
     </div>
   )
 }
@@ -217,7 +262,6 @@ function buildUrl(bounds, zoom, filters) {
   return `http://127.0.0.1:8000/api/map?${params}`
 }
 
-// Общая функция загрузки — оставь как есть, она уже не хук
 function loadCrimes(map, zoom, filters, setCrimes) {
   const bounds = map.getBounds()
   const cached = mapCache.get(bounds, zoom, filters)
@@ -284,11 +328,12 @@ function ClusterMarker({ point }) {
 }
 
 export default function CrimeMap() {
-  const [crimes, setCrimes]           = useState([])
-  const [zoom, setZoom]               = useState(12)
+  const [crimes, setCrimes]         = useState([])
+  const [zoom, setZoom]             = useState(12)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [filters, setFilters]         = useState({ years: [], severity: [], districts: [] })
-  const [options, setOptions]         = useState({ years: [], districts: [] })
+  const [filters, setFilters]       = useState({ years: [], severity: [], districts: [] })
+  const [options, setOptions]       = useState({ years: [], districts: [] })
+  const [districtGeo, setDistrictGeo] = useState(null)  // ← useState внутри компонента
 
   const isDetailed = zoom >= 17
 
@@ -296,6 +341,14 @@ export default function CrimeMap() {
     fetch('http://127.0.0.1:8000/api/map/filters')
       .then(r => r.json())
       .then(data => setOptions(data))
+  }, [])
+
+  // Загрузка GeoJSON границ районов
+  useEffect(() => {
+    fetch('/almaty-districts.geo.json')
+      .then(r => r.json())
+      .then(data => setDistrictGeo(data))
+      .catch(err => console.warn('GeoJSON не загружен:', err))
   }, [])
 
   return (
@@ -315,6 +368,15 @@ export default function CrimeMap() {
           maxZoom={20}
           tileSize={256}
         />
+
+        {/* Границы районов — рендерим под маркерами */}
+        {districtGeo && (
+          <GeoJSON
+            key={filters.districts.join(',')}
+            data={districtGeo}
+            style={(feature) => getDistrictStyle(feature, filters.districts)}
+          />
+        )}
 
         <MapInit setCrimes={setCrimes} setZoom={setZoom} filters={filters} />
         <MapEvents setCrimes={setCrimes} setZoom={setZoom} filters={filters} />
@@ -337,7 +399,7 @@ export default function CrimeMap() {
           )
         })}
 
-        {isDetailed && <Legend />}
+        <Legend filters={filters} />
       </MapContainer>
     </div>
   )
